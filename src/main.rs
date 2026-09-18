@@ -1,4 +1,4 @@
-use naiveio::{Delay, Runtime, time::TimeDriver};
+use naiveio::{Runtime, time::{Delay, TimeDriver}};
 use std::time::{Duration, Instant};
 
 fn main() {
@@ -12,15 +12,15 @@ fn main() {
 
     // Spawn an asynchronous task, equal to tokio::spawn()
     rt.spawn(async move {
-        let _ = Delay::new(Duration::from_millis(20), wheel).await;
-        println!("task 1");
+        let _ = Delay::new(Duration::from_secs(2), wheel).await;
+        println!("task 1 done!");
 
         println!("{:?}", time.elapsed());
     });
 
     rt.spawn(async move {
-        let _ = Delay::new(Duration::from_millis(50), wheel_cloned).await;
-        println!("task 2");
+        let _ = Delay::new(Duration::from_secs(1), wheel_cloned).await;
+        println!("task 2 done!");
 
         println!("{:?}", time.elapsed());
     });

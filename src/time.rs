@@ -1,7 +1,7 @@
 // naiveio's naive time driver.
-// it uses the Hashed and Hierarchical Time Wheels approach to manage the delays
 
 use std::{
+    fmt::Debug,
     sync::{Arc, Mutex},
     task::Waker,
     thread,
@@ -21,9 +21,34 @@ pub struct TimerEntry {
     waker: Waker,
 }
 
+impl Debug for TimerEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TimerEntry")
+            .field("expiration", &self.expiration)
+            .finish()
+    }
+}
+
 pub struct Level {
     slots: Vec<Vec<TimerEntry>>,
     current: usize,
+}
+
+impl Debug for Level {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Level")
+            .field(
+                "slots",
+                &self
+                    .slots
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(index, inner)| inner.into_iter().map(move |item| (item, index)))
+                    .collect::<Vec<(&TimerEntry, usize)>>(),
+            )
+            .field("current", &self.current)
+            .finish()
+    }
 }
 
 impl Level {
@@ -34,6 +59,11 @@ impl Level {
         }
     }
 }
+
+// A wheel has 4 levels, each level has 64 slots, and each slot could contains
+// multiple wakers.
+// At level 0, each slot represents 1 ms. At level 1, each slot
+// represents 64 ms. At level 3 each slot represents 4096ms and so on.
 
 pub struct Wheel {
     levels: Vec<Level>,
@@ -110,7 +140,15 @@ impl TimeDriver {
                 thread::sleep(TICK_DURATION);
                 let expired = {
                     let mut w = wheel_clone.lock().unwrap();
-                    w.tick()
+                    let wakers = w.tick();
+                    if w.current_tick % 500 == 0 || w.current_tick == 0 || !wakers.is_empty() {
+                        println!(
+                            "tick: {}, wakers: {:?}, levels: {:#?}",
+                            w.current_tick, wakers, &w.levels
+                        );
+                    }
+
+                    wakers
                 };
 
                 for waker in expired {

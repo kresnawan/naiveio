@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use crate::time::Wheel;
 
-/// Works like tokio::sleep() but dumber one. As a future object, it doesn't hold the waker,
-/// the waker is held by the time wheel (src/time.rs) since the time wheel is responsible
-/// to act like a reactor/notifier if any delay is on deadline
+/// Works like tokio::sleep() but naiver one. It doesn't hold the waker, the waker is held 
+/// by the time driver (src/time.rs) since the time driver is responsible to act like a 
+/// reactor/notifier if any delay is on deadline
 pub struct Delay {
     pub when: Instant,
     pub is_registered: bool,

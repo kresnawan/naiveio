@@ -29,6 +29,7 @@ impl Debug for TimerEntry {
     }
 }
 
+/// Level unit for Wheel
 pub struct Level {
     slots: Vec<Vec<TimerEntry>>,
     current: usize,
@@ -60,17 +61,18 @@ impl Level {
     }
 }
 
-// A wheel has 4 levels, each level has 64 slots, and each slot could contains
-// multiple wakers.
-// At level 0, each slot represents 1 ms. At level 1, each slot
-// represents 64 ms. At level 3 each slot represents 4096ms and so on.
-
+/// The time wheel for time driver
 pub struct Wheel {
+    // A wheel has 4 levels, each level has 64 slots, and each slot could contains
+    // multiple wakers.
+    // At level 0, each slot represents 1 ms. At level 1, each slot
+    // represents 64 ms. At level 3 each slot represents 4096ms and so on.
     levels: Vec<Level>,
     current_tick: u64,
 }
 
 impl Wheel {
+    /// Creates new Wheel
     pub fn new() -> Wheel {
         Wheel {
             levels: (0..NUM_LEVELS).map(|_| Level::new()).collect(),
@@ -78,6 +80,7 @@ impl Wheel {
         }
     }
 
+    /// Inserts the timer entry
     pub fn insert(&mut self, waker: Waker, ticks: usize) {
         let expiration = self.current_tick + ticks as u64;
         self.insert_entry(TimerEntry { expiration, waker });
@@ -126,11 +129,43 @@ impl Wheel {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_0_covers_delta_up_to_63() {
+        assert_eq!(Wheel::level_for_delta(0), 0);
+        assert_eq!(Wheel::level_for_delta(63), 0);
+    }
+
+    #[test]
+    fn delta_64_crosses_into_level_1() {
+        assert_eq!(Wheel::level_for_delta(64), 1);
+        assert_eq!(Wheel::level_for_delta(4095), 1);
+    }
+
+    #[test]
+    fn delta_4096_crosses_into_level_2() {
+        assert_eq!(Wheel::level_for_delta(4096), 2);
+        assert_eq!(Wheel::level_for_delta(262143), 2);
+    }
+
+    #[test]
+    fn delta_262144_and_beyond_stays_at_level_3() {
+        assert_eq!(Wheel::level_for_delta(262144), 3);
+        assert_eq!(Wheel::level_for_delta(u64::MAX), 3);
+    }
+}
+
+/// An object which initialize the Wheel and runs the timer.
 pub struct TimeDriver {
     pub wheel: Arc<Mutex<Wheel>>,
 }
 
 impl TimeDriver {
+    /// Starts the TimeDriver, for every `TICK_DURATION`, it will tick() the driver
+    /// timer.
     pub fn start() -> Arc<Mutex<Wheel>> {
         let wheel = Arc::new(Mutex::new(Wheel::new()));
         let wheel_clone = wheel.clone();
@@ -141,12 +176,6 @@ impl TimeDriver {
                 let expired = {
                     let mut w = wheel_clone.lock().unwrap();
                     let wakers = w.tick();
-                    if w.current_tick % 500 == 0 || w.current_tick == 0 || !wakers.is_empty() {
-                        println!(
-                            "tick: {}, wakers: {:?}, levels: {:#?}",
-                            w.current_tick, wakers, &w.levels
-                        );
-                    }
 
                     wakers
                 };

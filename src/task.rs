@@ -1,8 +1,14 @@
-use std::{pin::Pin, sync::{Arc, Mutex, mpsc}, task::{Context, Poll, Wake, Waker}};
+use std::{
+    pin::Pin,
+    sync::{Arc, Mutex, atomic::Ordering},
+    task::{Context, Poll, Wake, Waker},
+};
+
+use crate::handle::Handle;
 
 pub struct Task {
     pub task_future: Mutex<TaskFuture>,
-    pub executor: mpsc::Sender<Arc<Task>>,
+    pub handle: Handle,
 }
 
 impl Task {
@@ -11,23 +17,28 @@ impl Task {
         let mut cx = Context::from_waker(&waker);
 
         let mut task_future = self.task_future.try_lock().unwrap();
-        task_future.poll(&mut cx);
+        task_future.poll(&mut cx, self.handle.clone());
     }
 
     fn schedule(self: &Arc<Self>) {
-        let _ = self.executor.send(self.clone());
+        let mut handle = self.handle.queue.0.lock().unwrap();
+        handle.push_back(self.clone());
+        self.handle.queue.1.notify_one();
     }
 
-    pub fn spawn<F>(future: F, sender: &mpsc::Sender<Arc<Task>>)
+    pub fn spawn<F>(future: F, handle: Handle)
     where
         F: Future<Output = ()> + Send + 'static,
     {
         let task = Arc::new(Task {
             task_future: Mutex::new(TaskFuture::new(future)),
-            executor: sender.clone(),
+            handle: handle.clone(),
         });
 
-        let _ = sender.send(task);
+        let (queue, cvar, _) = &*handle.queue;
+
+        queue.lock().unwrap().push_back(task);
+        cvar.notify_one();
     }
 }
 
@@ -60,10 +71,12 @@ impl TaskFuture {
         }
     }
 
-    fn poll(&mut self, cx: &mut Context<'_>) {
+    fn poll(&mut self, cx: &mut Context<'_>, handle: Handle) {
         if self.poll.is_pending() {
             self.poll = self.future.as_mut().poll(cx);
+            if self.poll.is_ready() {
+                handle.queue.2.fetch_sub(1, Ordering::SeqCst);
+            }
         }
     }
 }
-

@@ -5,8 +5,8 @@ This project is far from perfect since my intention in making this project is to
 
 ## Limitations
 - Single-thread scheduler only.
-- No JoinHandle yet — A task can't return a value.
 - Sleep-based timer wheel (1ms) per tick, a bit of drift from real-world time.
+- The timer driver is separated from the Runtime instance yet.
 - No cancellation / timeout for task yet.
 - Not for production, only education.
 
@@ -44,9 +44,9 @@ fn main() {
 ```
 Expected result:
 ```
-*two seconds passed
+# two seconds passed
 delayed for 2 seconds!
-*one seconds passed
+# one second passed
 delayed for 3 seconds!
 ```
 Run the test by:

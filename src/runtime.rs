@@ -28,7 +28,7 @@ impl Runtime {
 
     pub fn enter(&self) -> EnterGuard {
         let prev = handle::set_current(self.handle.clone());
-        EnterGuard { prev }
+        EnterGuard::new(prev)
     }
 
     pub fn spawn<F>(&self, future: F)
@@ -36,6 +36,36 @@ impl Runtime {
         F: Future<Output = ()> + Send + 'static,
     {
         self.handle.spawn(future);
+    }
+
+    pub fn block_on<F, T>(&mut self, future: F) -> F::Output
+    where
+        F: Future<Output = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let _enter_guard = self.enter();
+        let j_handle = self.handle.spawn(future);
+
+        loop {
+            if let Some(result) = j_handle.stage.lock().unwrap().result.take() {
+                return result;
+            }
+
+            let (queue, cvar, _) = &*self.handle.queue;
+
+            let mut guard = queue.lock().unwrap();
+
+            while guard.is_empty() {
+                guard = cvar.wait(guard).unwrap();
+            }
+
+            let task = guard.pop_front();
+            drop(guard);
+
+            if let Some(task) = task {
+                task.poll();
+            }
+        }
     }
 
     pub fn run(&mut self) {
@@ -55,14 +85,8 @@ impl Runtime {
             let task = guard.pop_front();
             drop(guard);
 
-            match task {
-                Some(t) => {
-                    t.poll();
-                }
-
-                None => {
-                    continue;
-                }
+            if let Some(task) = task {
+                task.poll();
             }
         }
     }
